@@ -1,0 +1,14 @@
+# Ignore build artifacts
+build/
+*.exe
+*.o
+*.obj
+
+# Ignore data files but keep the directory
+data/*
+!data/.gitkeep
+
+# Ignore IDE files
+.vscode/
+.vs/
+*.user
