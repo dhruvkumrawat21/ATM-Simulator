@@ -257,3 +257,78 @@ graph LR
     style C fill:#e74c3c,stroke:#c0392b,color:white;
     style D fill:#34495e,stroke:#2c3e50,color:white;
 ```
+
+---
+
+## 9. Tech Stack & Technologies Used
+This diagram visually represents the core technologies that make up your project, which is great for the "Skills" section of an interview.
+
+```mermaid
+mindmap
+  root((ATM Simulator))
+    Programming Language
+      C++11
+      Object-Oriented Design
+    Database
+      SQLite 3 (Amalgamation)
+      Relational SQL
+    Security
+      SHA-256 Hashing
+      Bitwise Cryptography
+    Version Control
+      Git
+      GitHub
+    Interface
+      ANSI Escape Sequences
+      Command Prompt (Windows API)
+```
+
+---
+
+## 10. Menu Navigation Tree
+A map showing how the user interface is structured and how a user navigates between different screens.
+
+```mermaid
+graph TD
+    A[Main Screen] --> B[1. User Login]
+    A --> C[2. Create Account]
+    A --> D[3. Admin Login]
+    A --> E[4. Exit]
+    
+    B --> F[User Menu]
+    F --> G[Check Balance]
+    F --> H[Deposit]
+    F --> I[Withdraw]
+    F --> J[Transfer]
+    F --> K[Mini Statement]
+    F --> L[Logout]
+    
+    D --> M[Admin Menu]
+    M --> N[View All Accounts]
+    M --> O[Export to CSV]
+    M --> P[Unlock Account]
+    M --> Q[Logout]
+    
+    classDef menu fill:#2c3e50,stroke:#34495e,color:white;
+    class A,B,C,D,E,F,M menu;
+```
+
+---
+
+## 11. Project Directory Structure
+This shows how cleanly the code is organized, proving that you follow standard software engineering folder structures.
+
+```mermaid
+graph LR
+    A[ATM-Simulator Root] --> B[src/]
+    A --> C[include/]
+    A --> D[data/]
+    A --> E[docs/]
+    A --> F[build/]
+    
+    B --> B1[main.cpp, System.cpp, Account.cpp, etc.]
+    C --> C1[System.h, Account.h, DatabaseManager.h, etc.]
+    D --> D1[bank.db, exported_accounts.csv]
+    E --> E1[Master_Visual_Guide.md, System_Flow.md, etc.]
+    F --> F1[ATMSimulator.exe]
+```
