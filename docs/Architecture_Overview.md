@@ -6,6 +6,29 @@ The ATM Simulator is a robust, object-oriented C++ application designed to simul
 ## Three-Tier Architecture
 The project follows a simplified **Three-Tier Architecture** pattern to separate concerns, making the code highly modular and easy to maintain.
 
+```mermaid
+graph TD
+    A[User / Admin] -->|Interacts| B[Terminal UI Module]
+    B -->|Sends Input| C[System Module - Core Logic]
+    
+    C -->|Uses| D[Account Modules - Savings/Current]
+    C -->|Hashes PINs| E[SHA-256 Security Module]
+    
+    C -->|Requests Data Save/Load| F[Database Manager]
+    F -->|Executes SQL Queries| G[(SQLite Database - bank.db)]
+    
+    classDef ui fill:#3498db,stroke:#2980b9,color:white;
+    classDef sys fill:#2ecc71,stroke:#27ae60,color:white;
+    classDef sec fill:#e74c3c,stroke:#c0392b,color:white;
+    classDef db fill:#f39c12,stroke:#d35400,color:white;
+    
+    class A,B ui;
+    class C,D sys;
+    class E sec;
+    class F,G db;
+```
+
+
 ### 1. Presentation Layer (UI)
 - **File:** `UI.cpp`, `UI.h`
 - **Purpose:** Handles all interactions with the user. It uses ANSI escape sequences and ASCII box drawing to present a beautiful, colorful, and error-proof command-line interface. It ensures that bad user input (like typing letters instead of numbers) is caught gracefully without crashing the system.

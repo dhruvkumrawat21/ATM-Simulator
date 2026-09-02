@@ -11,7 +11,43 @@ This document explains exactly how data moves through the application when a use
 5. **SQL Execution**: The `DatabaseManager` constructs an `INSERT INTO Accounts` SQL query and executes it against `bank.db`.
 6. **Transaction Log**: An "INITIAL DEPOSIT" transaction is logged in the `Transactions` table.
 
+---
+
 ## Flow 2: User Login and Locking Mechanism
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI
+    participant System
+    participant SHA256
+    participant Database
+
+    User->>UI: Enters Account Number & PIN
+    UI->>System: Sends Login Request
+    System->>Database: Fetch Account Data
+    Database-->>System: Returns Account Object
+    
+    alt Account is Locked
+        System-->>UI: Show Error (Account Locked)
+    else Account is Active
+        System->>SHA256: Hash entered PIN
+        SHA256-->>System: Returns 64-char Hash
+        
+        alt Hashes Match
+            System->>Database: Reset failed_attempts = 0
+            System-->>UI: Show User Menu (Login Success)
+        else Hashes Do Not Match
+            System->>Database: Increment failed_attempts (+1)
+            alt failed_attempts == 3
+                System->>Database: Set isLocked = TRUE
+                System-->>UI: Show Error (Account Locked!)
+            else
+                System-->>UI: Show Error (Incorrect PIN)
+            end
+        end
+    end
+```
 
 1. **Authentication**: User enters their Account Number and PIN.
 2. **Verification**: 
@@ -22,6 +58,36 @@ This document explains exactly how data moves through the application when a use
 4. **Failure & Locking**: If they do not match, `failed_attempts` increments. If `failed_attempts` reaches 3, `isLocked` becomes `true`. An `UPDATE` SQL query is immediately fired to save this locked status to the database. The user is blocked from logging in until an Admin unlocks it.
 
 ## Flow 3: Money Transfer (ACID principles simulated)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant System
+    participant Sender_Account
+    participant Receiver_Account
+    participant Database
+
+    User->>System: Transfer $100 to Acc 123456
+    System->>Database: Fetch Receiver Account
+    Database-->>System: Receiver Found
+    
+    System->>Sender_Account: withdraw($100)
+    alt Insufficient Balance
+        Sender_Account-->>System: Returns False
+        System-->>User: Show Error (Insufficient Funds)
+    else Sufficient Balance
+        Sender_Account-->>System: Returns True (Balance Updated)
+        System->>Receiver_Account: deposit($100)
+        
+        %% Database Updates
+        System->>Database: UPDATE Sender Balance
+        System->>Database: UPDATE Receiver Balance
+        System->>Database: INSERT Transaction Log (Sender - Transfer Out)
+        System->>Database: INSERT Transaction Log (Receiver - Transfer In)
+        
+        System-->>User: Show Success Message
+    end
+```
 
 1. **Validation**: User enters a receiver's account number and an amount. The system checks if the receiver exists and if the sender has enough funds (triggering the polymorphic `withdraw()` check).
 2. **Execution**:
