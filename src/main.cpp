@@ -18,8 +18,8 @@ int main() {
     SetConsoleMode(hOut, dwMode);
 #endif
 
-    // Initialize the ATM system with the database file path
-    System atmSystem("data/accounts.dat");
+    // Initialize the ATM system with the SQLite database file path
+    System atmSystem("data/bank.db");
     
     // Run the main program loop
     atmSystem.run();
