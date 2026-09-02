@@ -191,3 +191,69 @@ erDiagram
         string timestamp
     }
 ```
+
+---
+
+## 6. Admin Panel Operations (State Diagram)
+This diagram maps out the capabilities of the Admin inside the system, such as exporting CSV files and unlocking restricted accounts.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Admin_Login
+    Admin_Login --> Admin_Menu : Enter valid credentials
+    
+    state Admin_Menu {
+        [*] --> Menu_Options
+        Menu_Options --> View_All_Accounts : Option 1
+        Menu_Options --> Export_CSV : Option 2
+        Menu_Options --> Unlock_Account : Option 3
+        
+        Export_CSV --> Database : Fetch all records
+        Database --> CSV_File : Write to exported_accounts.csv
+        
+        Unlock_Account --> Database : Set isLocked = 0, failedAttempts = 0
+    }
+    
+    Admin_Menu --> [*] : Logout
+```
+
+---
+
+## 7. Polymorphism in Action (Withdrawal Logic)
+This flowchart specifically demonstrates how **Polymorphism** works in your system. It shows how the exact same `withdraw(amount)` function call behaves completely differently depending on the object type.
+
+```mermaid
+graph TD
+    A[User requests withdrawal of $X] --> B{What type of Account is it?}
+    
+    B -->|SavingsAccount Object| C[Check: Balance - X >= 0?]
+    C -->|Yes| D[Approve & Update Balance]
+    C -->|No| E[Reject: Cannot go below zero]
+    
+    B -->|CurrentAccount Object| F[Check: Balance - X >= -$500?]
+    F -->|Yes| D
+    F -->|No| G[Reject: Overdraft limit reached]
+    
+    classDef savings fill:#8e44ad,stroke:#2980b9,color:white;
+    classDef current fill:#2980b9,stroke:#2980b9,color:white;
+    
+    class C,E savings;
+    class F,G current;
+```
+
+---
+
+## 8. Cryptographic Hashing Logic (SHA-256)
+A visualization showing why the database is secure, and why the original PIN can never be retrieved by hackers.
+
+```mermaid
+graph LR
+    A[User Input: '1234'] -->|Raw String| B(SHA-256 Hashing Algorithm)
+    B -->|One-Way Cryptographic Math| C[Hash: '03ac674216f3e15c...']
+    C -->|Stored In| D[(Database)]
+    
+    style A fill:#2ecc71,stroke:#27ae60,color:white;
+    style B fill:#f39c12,stroke:#d35400,color:white;
+    style C fill:#e74c3c,stroke:#c0392b,color:white;
+    style D fill:#34495e,stroke:#2c3e50,color:white;
+```
