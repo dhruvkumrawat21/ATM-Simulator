@@ -6,7 +6,7 @@
 
 class System {
 private:
-    std::vector<Account> accounts;
+    std::vector<Account*> accounts;
     DatabaseManager dbManager;
     Account* loggedInUser;
 
@@ -24,7 +24,11 @@ private:
     void checkBalance();
     void transferMoney();
     void changePin();
+    void viewMiniStatement();
     
+    // Admin specific
+    void unlockAccounts();
+
     // Search helper
     Account* findAccount(const std::string& accNum);
 

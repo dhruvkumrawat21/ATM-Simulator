@@ -1,10 +1,16 @@
 #include "Account.h"
+#include <iostream>
 
-Account::Account(const std::string& accName, const std::string& accNum, const std::string& accPin, double initBalance)
-    : Person(accName), accountNumber(accNum), pin(accPin), balance(initBalance) {
+using namespace std; // Using standard namespace as requested to make code easier to read
+
+// ==========================================
+// Base Account Implementation
+// ==========================================
+Account::Account(const string& accName, const string& accNum, const string& pHash, double initBalance, bool locked, int failed)
+    : Person(accName), accountNumber(accNum), pinHash(pHash), balance(initBalance), isLocked(locked), failedAttempts(failed) {
 }
 
-std::string Account::getAccountNumber() const {
+string Account::getAccountNumber() const {
     return accountNumber;
 }
 
@@ -12,20 +18,16 @@ double Account::getBalance() const {
     return balance;
 }
 
-std::string Account::getPin() const {
-    return pin;
+string Account::getPinHash() const {
+    return pinHash;
 }
 
-bool Account::verifyPin(const std::string& enteredPin) const {
-    return pin == enteredPin;
+bool Account::getIsLocked() const {
+    return isLocked;
 }
 
-bool Account::changePin(const std::string& oldPin, const std::string& newPin) {
-    if (verifyPin(oldPin)) {
-        pin = newPin;
-        return true;
-    }
-    return false;
+int Account::getFailedAttempts() const {
+    return failedAttempts;
 }
 
 void Account::deposit(double amount) {
@@ -34,22 +36,40 @@ void Account::deposit(double amount) {
     }
 }
 
-bool Account::withdraw(double amount) {
+void Account::setLocked(bool status) {
+    isLocked = status;
+}
+
+void Account::setFailedAttempts(int attempts) {
+    failedAttempts = attempts;
+}
+
+// ==========================================
+// Savings Account Implementation
+// ==========================================
+SavingsAccount::SavingsAccount(const string& accName, const string& accNum, const string& pHash, double initBalance, bool locked, int failed)
+    : Account(accName, accNum, pHash, initBalance, locked, failed) {}
+
+bool SavingsAccount::withdraw(double amount) {
+    // Savings accounts enforce strict balance limits
     if (amount > 0 && balance >= amount) {
         balance -= amount;
         return true;
     }
-    return false;
+    return false; // Insufficient funds
 }
 
-bool Account::transfer(Account& receiver, double amount) {
-    if (withdraw(amount)) {
-        receiver.deposit(amount);
+// ==========================================
+// Current Account Implementation
+// ==========================================
+CurrentAccount::CurrentAccount(const string& accName, const string& accNum, const string& pHash, double initBalance, bool locked, int failed)
+    : Account(accName, accNum, pHash, initBalance, locked, failed) {}
+
+bool CurrentAccount::withdraw(double amount) {
+    // Current accounts allow overdraft up to the limit
+    if (amount > 0 && (balance + overdraftLimit) >= amount) {
+        balance -= amount;
         return true;
     }
-    return false;
-}
-
-std::string Account::toCSV() const {
-    return accountNumber + "," + name + "," + std::to_string(balance);
+    return false; // Exceeded overdraft limit
 }

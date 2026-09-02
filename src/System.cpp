@@ -1,22 +1,28 @@
 #include "System.h"
 #include "UI.h"
+#include "sha256.h"
 #include <iostream>
 #include <limits>
 #include <random>
+#include <iomanip>
 
-System::System(const std::string& dbFilename) 
+using namespace std;
+
+System::System(const string& dbFilename) 
     : dbManager(dbFilename), loggedInUser(nullptr) {
     accounts = dbManager.loadAccounts();
 }
 
 System::~System() {
-    dbManager.saveAccounts(accounts);
+    for (Account* acc : accounts) {
+        delete acc;
+    }
 }
 
-Account* System::findAccount(const std::string& accNum) {
-    for (auto& acc : accounts) {
-        if (acc.getAccountNumber() == accNum) {
-            return &acc;
+Account* System::findAccount(const string& accNum) {
+    for (auto acc : accounts) {
+        if (acc->getAccountNumber() == accNum) {
+            return acc;
         }
     }
     return nullptr;
@@ -46,54 +52,63 @@ void System::run() {
 void System::createAccount() {
     UI::printHeader("CREATE NEW ACCOUNT");
     
-    std::string name, pin, pinConfirm;
+    string name, pin, pinConfirm;
     double initialDeposit;
 
-    std::cout << UI::CYAN << " Enter Full Name: " << UI::RESET;
-    std::getline(std::cin, name);
+    cout << UI::CYAN << " Enter Full Name: " << UI::RESET;
+    getline(cin, name);
 
-    // Generate a random 6-digit account number
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distr(100000, 999999);
-    std::string accNum = std::to_string(distr(gen));
+    // Ask for Account Type (Demonstrating Polymorphism)
+    UI::printMessage("\n Select Account Type:", UI::YELLOW);
+    UI::printMenuOption(1, "Savings Account (Cannot overdraft)");
+    UI::printMenuOption(2, "Current Account (Allows $500 overdraft)");
+    int typeChoice = UI::getMenuChoice(2);
 
-    // Ensure it's unique
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> distr(100000, 999999);
+    string accNum = to_string(distr(gen));
+
     while (findAccount(accNum) != nullptr) {
-        accNum = std::to_string(distr(gen));
+        accNum = to_string(distr(gen));
     }
 
-    std::cout << UI::CYAN << " Enter 4-digit PIN: " << UI::RESET;
-    std::getline(std::cin, pin);
-    std::cout << UI::CYAN << " Confirm PIN: " << UI::RESET;
-    std::getline(std::cin, pinConfirm);
+    cout << UI::CYAN << " Enter 4-digit PIN: " << UI::RESET;
+    getline(cin, pin);
+    cout << UI::CYAN << " Confirm PIN: " << UI::RESET;
+    getline(cin, pinConfirm);
 
-    if (pin != pinConfirm) {
-        UI::printError("PINs do not match. Account creation failed.");
+    if (pin != pinConfirm || pin.length() != 4) {
+        UI::printError("Invalid PIN setup. Must be 4 digits and match.");
         UI::pause();
         return;
     }
 
-    if (pin.length() != 4) {
-        UI::printError("PIN must be exactly 4 characters.");
-        UI::pause();
-        return;
-    }
+    // Securely hash the PIN using SHA-256
+    string pinHash = SHA256::hashString(pin);
 
-    std::cout << UI::CYAN << " Enter Initial Deposit Amount: " << UI::RESET;
-    if (!(std::cin >> initialDeposit) || initialDeposit < 0) {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    cout << UI::CYAN << " Enter Initial Deposit Amount: " << UI::RESET;
+    if (!(cin >> initialDeposit) || initialDeposit < 0) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         UI::printError("Invalid amount.");
         UI::pause();
         return;
     }
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-    accounts.emplace_back(name, accNum, pin, initialDeposit);
-    dbManager.saveAccounts(accounts); // Save immediately
+    Account* newAcc = nullptr;
+    if (typeChoice == 1) {
+        newAcc = new SavingsAccount(name, accNum, pinHash, initialDeposit);
+    } else {
+        newAcc = new CurrentAccount(name, accNum, pinHash, initialDeposit);
+    }
+
+    accounts.push_back(newAcc);
+    dbManager.saveAccount(newAcc);
+    dbManager.logTransaction(accNum, "INITIAL DEPOSIT", initialDeposit);
     
-    UI::printSuccess("Account created successfully!");
+    UI::printSuccess(newAcc->getAccountType() + " Account created successfully!");
     UI::printMessage("Your Account Number is: " + UI::YELLOW + UI::BOLD + accNum, UI::CYAN);
     UI::pause();
 }
@@ -101,9 +116,9 @@ void System::createAccount() {
 void System::userLogin() {
     UI::printHeader("USER LOGIN");
     
-    std::string accNum, pin;
-    std::cout << UI::CYAN << " Enter Account Number: " << UI::RESET;
-    std::getline(std::cin, accNum);
+    string accNum, pin;
+    cout << UI::CYAN << " Enter Account Number: " << UI::RESET;
+    getline(cin, accNum);
     
     Account* acc = findAccount(accNum);
     if (!acc) {
@@ -112,14 +127,31 @@ void System::userLogin() {
         return;
     }
 
-    std::cout << UI::CYAN << " Enter PIN: " << UI::RESET;
-    std::getline(std::cin, pin);
+    if (acc->getIsLocked()) {
+        UI::printError("Account is LOCKED due to too many failed attempts. Contact Admin.");
+        UI::pause();
+        return;
+    }
 
-    if (acc->verifyPin(pin)) {
+    cout << UI::CYAN << " Enter PIN: " << UI::RESET;
+    getline(cin, pin);
+
+    // Check hashed PIN
+    if (acc->getPinHash() == SHA256::hashString(pin)) {
+        acc->setFailedAttempts(0);
+        dbManager.updateAccount(acc);
         loggedInUser = acc;
         userMenu();
     } else {
-        UI::printError("Incorrect PIN.");
+        int attempts = acc->getFailedAttempts() + 1;
+        acc->setFailedAttempts(attempts);
+        if (attempts >= 3) {
+            acc->setLocked(true);
+            UI::printError("INCORRECT PIN 3 TIMES. ACCOUNT LOCKED.");
+        } else {
+            UI::printError("Incorrect PIN. Attempt " + to_string(attempts) + " of 3.");
+        }
+        dbManager.updateAccount(acc);
         UI::pause();
     }
 }
@@ -127,11 +159,11 @@ void System::userLogin() {
 void System::userMenu() {
     while (loggedInUser != nullptr) {
         UI::printHeader("USER MODE - Welcome, " + loggedInUser->getName());
-        UI::printMenuOption(1, "Check Balance");
+        UI::printMenuOption(1, "Check Balance (Multi-Currency)");
         UI::printMenuOption(2, "Deposit Money");
         UI::printMenuOption(3, "Withdraw Money");
         UI::printMenuOption(4, "Transfer Money");
-        UI::printMenuOption(5, "Change PIN");
+        UI::printMenuOption(5, "Mini Statement");
         UI::printMenuOption(6, "Logout");
 
         int choice = UI::getMenuChoice(6);
@@ -141,7 +173,7 @@ void System::userMenu() {
             case 2: depositMoney(); break;
             case 3: withdrawMoney(); break;
             case 4: transferMoney(); break;
-            case 5: changePin(); break;
+            case 5: viewMiniStatement(); break;
             case 6: 
                 loggedInUser = nullptr;
                 UI::printSuccess("Logged out successfully.");
@@ -153,23 +185,30 @@ void System::userMenu() {
 
 void System::checkBalance() {
     UI::printHeader("BALANCE INQUIRY");
-    std::cout << "\n" << UI::CYAN << " Current Balance: " << UI::GREEN << "$" << loggedInUser->getBalance() << "\n";
+    double bal = loggedInUser->getBalance();
+    
+    // Multi-currency display
+    cout << "\n" << UI::CYAN << " Base Currency (USD): " << UI::GREEN << "$" << fixed << setprecision(2) << bal << "\n";
+    cout << UI::CYAN << " Euro (EUR): " << UI::YELLOW << "€" << fixed << setprecision(2) << (bal * 0.92) << "\n";
+    cout << UI::CYAN << " Indian Rupee (INR): " << UI::MAGENTA << "₹" << fixed << setprecision(2) << (bal * 83.15) << "\n";
+    
     UI::pause();
 }
 
 void System::depositMoney() {
     UI::printHeader("DEPOSIT MONEY");
     double amount;
-    std::cout << UI::CYAN << " Enter amount to deposit: $" << UI::RESET;
+    cout << UI::CYAN << " Enter amount to deposit: $" << UI::RESET;
     
-    if (std::cin >> amount && amount > 0) {
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    if (cin >> amount && amount > 0) {
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         loggedInUser->deposit(amount);
-        dbManager.saveAccounts(accounts);
-        UI::printSuccess("Deposited $" + std::to_string(amount) + " successfully.");
+        dbManager.updateAccount(loggedInUser);
+        dbManager.logTransaction(loggedInUser->getAccountNumber(), "DEPOSIT", amount);
+        UI::printSuccess("Deposited $" + to_string(amount) + " successfully.");
     } else {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         UI::printError("Invalid deposit amount.");
     }
     UI::pause();
@@ -178,19 +217,22 @@ void System::depositMoney() {
 void System::withdrawMoney() {
     UI::printHeader("WITHDRAW MONEY");
     double amount;
-    std::cout << UI::CYAN << " Enter amount to withdraw: $" << UI::RESET;
+    cout << UI::CYAN << " Enter amount to withdraw: $" << UI::RESET;
     
-    if (std::cin >> amount && amount > 0) {
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    if (cin >> amount && amount > 0) {
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        
+        // Polymorphic call: Works differently for Savings vs Current
         if (loggedInUser->withdraw(amount)) {
-            dbManager.saveAccounts(accounts);
-            UI::printSuccess("Withdrew $" + std::to_string(amount) + " successfully.");
+            dbManager.updateAccount(loggedInUser);
+            dbManager.logTransaction(loggedInUser->getAccountNumber(), "WITHDRAWAL", amount);
+            UI::printSuccess("Withdrew $" + to_string(amount) + " successfully.");
         } else {
-            UI::printError("Insufficient balance.");
+            UI::printError("Insufficient balance or over draft limit.");
         }
     } else {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         UI::printError("Invalid withdrawal amount.");
     }
     UI::pause();
@@ -199,9 +241,9 @@ void System::withdrawMoney() {
 void System::transferMoney() {
     UI::printHeader("MONEY TRANSFER");
     
-    std::string targetAccNum;
-    std::cout << UI::CYAN << " Enter receiver's Account Number: " << UI::RESET;
-    std::getline(std::cin, targetAccNum);
+    string targetAccNum;
+    cout << UI::CYAN << " Enter receiver's Account Number: " << UI::RESET;
+    getline(cin, targetAccNum);
 
     if (targetAccNum == loggedInUser->getAccountNumber()) {
         UI::printError("Cannot transfer to your own account.");
@@ -217,52 +259,43 @@ void System::transferMoney() {
     }
 
     double amount;
-    std::cout << UI::CYAN << " Enter amount to transfer: $" << UI::RESET;
+    cout << UI::CYAN << " Enter amount to transfer: $" << UI::RESET;
     
-    if (std::cin >> amount && amount > 0) {
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    if (cin >> amount && amount > 0) {
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         
-        if (loggedInUser->transfer(*receiver, amount)) {
-            dbManager.saveAccounts(accounts);
-            UI::printSuccess("Transferred $" + std::to_string(amount) + " to " + receiver->getName() + " successfully.");
+        // Polymorphic call for withdrawal
+        if (loggedInUser->withdraw(amount)) {
+            receiver->deposit(amount);
+            
+            dbManager.updateAccount(loggedInUser);
+            dbManager.updateAccount(receiver);
+            
+            dbManager.logTransaction(loggedInUser->getAccountNumber(), "TRANSFER OUT", amount);
+            dbManager.logTransaction(receiver->getAccountNumber(), "TRANSFER IN", amount);
+
+            UI::printSuccess("Transferred $" + to_string(amount) + " to " + receiver->getName() + " successfully.");
         } else {
             UI::printError("Insufficient balance for transfer.");
         }
     } else {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         UI::printError("Invalid transfer amount.");
     }
     UI::pause();
 }
 
-void System::changePin() {
-    UI::printHeader("PIN MANAGEMENT");
+void System::viewMiniStatement() {
+    UI::printHeader("MINI STATEMENT");
+    vector<string> statement = dbManager.getMiniStatement(loggedInUser->getAccountNumber());
     
-    std::string oldPin, newPin;
-    std::cout << UI::CYAN << " Enter current PIN: " << UI::RESET;
-    std::getline(std::cin, oldPin);
-
-    if (!loggedInUser->verifyPin(oldPin)) {
-        UI::printError("Incorrect current PIN.");
-        UI::pause();
-        return;
-    }
-
-    std::cout << UI::CYAN << " Enter new 4-digit PIN: " << UI::RESET;
-    std::getline(std::cin, newPin);
-
-    if (newPin.length() != 4) {
-        UI::printError("PIN must be exactly 4 characters.");
-        UI::pause();
-        return;
-    }
-
-    if (loggedInUser->changePin(oldPin, newPin)) {
-        dbManager.saveAccounts(accounts);
-        UI::printSuccess("PIN changed successfully!");
+    if (statement.empty()) {
+        UI::printMessage("No transactions found.", UI::YELLOW);
     } else {
-        UI::printError("Failed to change PIN.");
+        for (const string& record : statement) {
+            cout << UI::WHITE << " " << record << "\n";
+        }
     }
     UI::pause();
 }
@@ -270,15 +303,14 @@ void System::changePin() {
 void System::adminLogin() {
     UI::printHeader("ADMIN LOGIN");
     
-    // Hardcoded Admin credentials for simulation
-    const std::string ADMIN_ID = "admin";
-    const std::string ADMIN_PASS = "admin123";
+    const string ADMIN_ID = "admin";
+    const string ADMIN_PASS = "admin123";
 
-    std::string id, pass;
-    std::cout << UI::CYAN << " Enter Admin ID: " << UI::RESET;
-    std::getline(std::cin, id);
-    std::cout << UI::CYAN << " Enter Admin Password: " << UI::RESET;
-    std::getline(std::cin, pass);
+    string id, pass;
+    cout << UI::CYAN << " Enter Admin ID: " << UI::RESET;
+    getline(cin, id);
+    cout << UI::CYAN << " Enter Admin Password: " << UI::RESET;
+    getline(cin, pass);
 
     if (id == ADMIN_ID && pass == ADMIN_PASS) {
         adminMenu();
@@ -293,9 +325,10 @@ void System::adminMenu() {
         UI::printHeader("ADMIN MODE");
         UI::printMenuOption(1, "View All Accounts");
         UI::printMenuOption(2, "Export Accounts to CSV");
-        UI::printMenuOption(3, "Logout");
+        UI::printMenuOption(3, "Unlock a Locked Account");
+        UI::printMenuOption(4, "Logout");
 
-        int choice = UI::getMenuChoice(3);
+        int choice = UI::getMenuChoice(4);
 
         switch (choice) {
             case 1: {
@@ -303,10 +336,12 @@ void System::adminMenu() {
                 if (accounts.empty()) {
                     UI::printMessage("No accounts found in the system.", UI::YELLOW);
                 } else {
-                    for (const auto& acc : accounts) {
-                        std::cout << UI::CYAN << " Acc No: " << UI::YELLOW << acc.getAccountNumber() 
-                                  << UI::CYAN << " | Name: " << UI::WHITE << acc.getName() 
-                                  << UI::CYAN << " | Balance: " << UI::GREEN << "$" << acc.getBalance() 
+                    for (Account* acc : accounts) {
+                        cout << UI::CYAN << " Acc No: " << UI::YELLOW << acc->getAccountNumber() 
+                                  << UI::CYAN << " | Name: " << UI::WHITE << acc->getName() 
+                                  << UI::CYAN << " | Type: " << UI::MAGENTA << acc->getAccountType()
+                                  << UI::CYAN << " | Bal: " << UI::GREEN << "$" << fixed << setprecision(2) << acc->getBalance() 
+                                  << UI::CYAN << " | Locked: " << (acc->getIsLocked() ? (UI::RED + "YES") : (UI::GREEN + "NO"))
                                   << UI::RESET << "\n";
                     }
                 }
@@ -314,8 +349,8 @@ void System::adminMenu() {
                 break;
             }
             case 2: {
-                std::string csvFile = "data/exported_accounts.csv";
-                if (dbManager.exportToCSV(accounts, csvFile)) {
+                string csvFile = "data/exported_accounts.csv";
+                if (dbManager.exportToCSV(csvFile)) {
                     UI::printSuccess("Exported all accounts to " + csvFile);
                 } else {
                     UI::printError("Failed to export accounts.");
@@ -324,9 +359,32 @@ void System::adminMenu() {
                 break;
             }
             case 3:
+                unlockAccounts();
+                break;
+            case 4:
                 UI::printSuccess("Admin logged out.");
                 UI::pause();
                 return;
         }
     }
+}
+
+void System::unlockAccounts() {
+    UI::printHeader("UNLOCK ACCOUNT");
+    string accNum;
+    cout << UI::CYAN << " Enter Account Number to unlock: " << UI::RESET;
+    getline(cin, accNum);
+    
+    Account* acc = findAccount(accNum);
+    if (!acc) {
+        UI::printError("Account not found.");
+    } else if (!acc->getIsLocked()) {
+        UI::printMessage("Account is already unlocked.", UI::YELLOW);
+    } else {
+        acc->setLocked(false);
+        acc->setFailedAttempts(0);
+        dbManager.updateAccount(acc);
+        UI::printSuccess("Account " + accNum + " has been UNLOCKED successfully.");
+    }
+    UI::pause();
 }
